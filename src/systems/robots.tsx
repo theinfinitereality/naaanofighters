@@ -15,6 +15,7 @@ import config from '@ir-engine/common/src/config'
 import { VisibleComponent } from '@ir-engine/spatial/src/renderer/components/VisibleComponent'
 import { EnvMapComponent } from '@ir-engine/engine/src/scene/components/EnvmapComponent'
 import { SceneState } from '@ir-engine/engine/src/gltf/GLTFState'
+import { openWelcomeModal } from './../components/WelcomeModal'
 
 const SPAWN_RADIUS = 5
 const SPAWN_COUNT = 10
@@ -73,6 +74,10 @@ const RobotState = defineState({
       setComponent(entity, GLTFComponent, {src: cdn + '/projects/theinfinitereality/naaanofighters/assets/xbot.vrm'})
       setComponent(entity, VisibleComponent)
       setComponent(entity, EnvMapComponent, {type: 'Skybox'})
+
+      if (state.value.length === 1) {
+        openWelcomeModal()
+      }
     }, [state])
   }
 })
