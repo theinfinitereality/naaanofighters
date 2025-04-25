@@ -1,9 +1,9 @@
-import { defineSystem, EngineState, Entity, setComponent } from '@ir-engine/ecs'
+import { defineQuery, defineSystem, EngineState, Entity, setComponent } from '@ir-engine/ecs'
 import { SimulationSystemGroup } from '@ir-engine/ecs'
 import { UUIDComponent, getComponent } from '@ir-engine/ecs'
 import { Engine } from '@ir-engine/ecs'
 import { NetworkState, NetworkTopics, WorldNetworkAction } from '@ir-engine/network'
-import { Vector3, Quaternion } from 'three'
+import { Vector3, Quaternion, Matrix4 } from 'three'
 import { EntityUUID } from '@ir-engine/ecs'
 import { defineState, dispatchAction, getMutableState, getState, useMutableState } from '@ir-engine/hyperflux'
 import { ReferenceSpaceState, TransformComponent } from '@ir-engine/spatial'
@@ -16,10 +16,27 @@ import { VisibleComponent } from '@ir-engine/spatial/src/renderer/components/Vis
 import { EnvMapComponent } from '@ir-engine/engine/src/scene/components/EnvmapComponent'
 import { SceneState } from '@ir-engine/engine/src/gltf/GLTFState'
 import { openWelcomeModal } from './../components/WelcomeModal'
+import { AvatarAnimationComponent, AvatarRigComponent } from '@ir-engine/engine/src/avatar/components/AvatarAnimationComponent'
+import { AvatarComponent } from '@ir-engine/engine/src/avatar/components/AvatarComponent'
+import { AnimationComponent } from '@ir-engine/engine/src/avatar/components/AnimationComponent'
+import { RigidBodyComponent } from '@ir-engine/spatial/src/physics/components/RigidBodyComponent'
+import { BodyTypes } from '@ir-engine/spatial/src/physics/types/PhysicsTypes'
 
 const SPAWN_RADIUS = 5
 const SPAWN_COUNT = 10
 let spawnAmount = 0
+
+const botQuery = defineQuery([RigidBodyComponent, TransformComponent])
+const BOT_SPEED = 2
+const MIN_DISTANCE_SQ = 0.5
+
+const _direction = new Vector3()
+const _targetPosition = new Vector3()
+const _botPosition = new Vector3()
+const _quaternion = new Quaternion()
+const _flip = new Quaternion().set(0,1,0,0)
+const _up = new Vector3(0, 1, 0)
+const _matrix = new Matrix4()
 
 const execute = () => {
   const sceneState = getState(SceneState)
@@ -28,7 +45,39 @@ const execute = () => {
   if(!originEntity) return
   const parentUUID = getComponent(originEntity, UUIDComponent)
 
+  ///////// do the movement of the bots
+  const selfAvatarEntity = AvatarComponent.getSelfAvatarEntity()
+  if (!selfAvatarEntity) return
+  // get avatar position
+  TransformComponent.getWorldPosition(selfAvatarEntity, _targetPosition)
+
+  // Update each bot's velocity to move towards avatar
+  for (const botEntity of botQuery()) {
+    const rigidbody = getComponent(botEntity, RigidBodyComponent)
+    TransformComponent.getWorldPosition(botEntity, _botPosition)
+
+    // Calculate direction to avatar
+    _direction.subVectors(_targetPosition, _botPosition)
+    if(_direction.lengthSq() < MIN_DISTANCE_SQ) continue
+    _direction.normalize()
+    _direction.multiplyScalar(BOT_SPEED)
+    
+    // Set y velocity to 0 to keep bots grounded
+    _direction.y = 0
+    
+    // Apply velocity
+    rigidbody.linearVelocity.copy(_direction)
+    rigidbody.targetKinematicPosition.copy(rigidbody.position).add(_direction.multiplyScalar(0.01))
+    // Set rotation to face movement direction
+    _quaternion.setFromRotationMatrix(
+      _matrix.lookAt(_botPosition, _targetPosition, _up)
+    ).multiply(_flip)
+    rigidbody.targetKinematicRotation.copy(_quaternion)
+  }
+
   if (spawnAmount >= SPAWN_COUNT) return
+
+  ///////// do the spawning
 
   const angle = Math.random() * Math.PI * 2
   const radius = Math.random() * SPAWN_RADIUS
@@ -40,7 +89,7 @@ const execute = () => {
   )
 
   const entityUUID = ('random-entity-' + spawnAmount) as EntityUUID
-  console.log('spawning bot')
+  
   dispatchAction(
     RobotActions.spawnRobot({
       position,
@@ -74,6 +123,15 @@ const RobotState = defineState({
       setComponent(entity, GLTFComponent, {src: cdn + '/projects/theinfinitereality/naaanofighters/assets/xbot.vrm'})
       setComponent(entity, VisibleComponent)
       setComponent(entity, EnvMapComponent, {type: 'Skybox'})
+
+      setComponent(entity, AvatarComponent)
+      setComponent(entity, AvatarAnimationComponent)
+      setComponent(entity, AvatarRigComponent)
+      setComponent(entity, RigidBodyComponent, {
+        type: BodyTypes.Kinematic,
+        allowRolling: false,
+        enabledRotations: [false, true, false]
+      })
 
       if (state.value.length === 1) {
         openWelcomeModal()
