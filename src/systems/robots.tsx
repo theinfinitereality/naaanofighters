@@ -1,11 +1,11 @@
 import config from '@ir-engine/common/src/config'
 import {
-  defineQuery,
   defineSystem,
   Engine,
   EngineState,
   EntityUUID,
   getComponent,
+  hasComponent,
   setComponent,
   SimulationSystemGroup,
   UUIDComponent
@@ -21,8 +21,12 @@ import { EnvMapComponent } from '@ir-engine/engine/src/scene/components/EnvmapCo
 import { defineState, dispatchAction, getMutableState, getState, useMutableState, UserID } from '@ir-engine/hyperflux'
 import { NetworkTopics } from '@ir-engine/network'
 import { TransformComponent } from '@ir-engine/spatial'
+import { Physics, RaycastArgs } from '@ir-engine/spatial/src/physics/classes/Physics'
+import { ColliderComponent } from '@ir-engine/spatial/src/physics/components/ColliderComponent'
 import { RigidBodyComponent } from '@ir-engine/spatial/src/physics/components/RigidBodyComponent'
-import { BodyTypes } from '@ir-engine/spatial/src/physics/types/PhysicsTypes'
+import { CollisionGroups } from '@ir-engine/spatial/src/physics/enums/CollisionGroups'
+import { getInteractionGroups } from '@ir-engine/spatial/src/physics/functions/getInteractionGroups'
+import { BodyTypes, SceneQueryType } from '@ir-engine/spatial/src/physics/types/PhysicsTypes'
 import { VisibleComponent } from '@ir-engine/spatial/src/renderer/components/VisibleComponent'
 import React, { useEffect } from 'react'
 import { Matrix4, Quaternion, Vector3 } from 'three'
@@ -34,17 +38,25 @@ const SPAWN_RADIUS = 10
 const SPAWN_COUNT = 3
 let spawnAmount = 0
 
-const botQuery = defineQuery([RigidBodyComponent, TransformComponent, BotComponent])
 const BOT_SPEED = 2
-const MIN_DISTANCE_SQ = 0.5
+const AVOIDANCE_DISTANCE = 0.1
 
 const _direction = new Vector3()
 const _targetPosition = new Vector3()
 const _botPosition = new Vector3()
 const _quaternion = new Quaternion()
-const _flip = new Quaternion().set(0, 1, 0, 0)
 const _up = new Vector3(0, 1, 0)
 const _matrix = new Matrix4()
+const _flip = new Quaternion(0, 1, 0, 0)
+
+// Raycast configuration for obstacle detection
+const raycastQuery = {
+  type: SceneQueryType.Closest,
+  origin: new Vector3(),
+  direction: new Vector3(),
+  maxDistance: AVOIDANCE_DISTANCE,
+  groups: getInteractionGroups(CollisionGroups.Default, CollisionGroups.Default)
+} as RaycastArgs
 
 const execute = () => {
   const sceneState = getState(SceneState)
@@ -66,20 +78,36 @@ const execute = () => {
     const rigidbody = getComponent(botEntity, RigidBodyComponent)
     TransformComponent.getWorldPosition(botEntity, _botPosition)
 
-    // Calculate direction to avatar
+    // Calculate base direction to avatar
     _direction.subVectors(_targetPosition, _botPosition)
-    if (_direction.lengthSq() < MIN_DISTANCE_SQ) continue
+
     _direction.normalize()
+
+    // Check for obstacles using raycast
+    // avoid self collider
+    raycastQuery.excludeCollider = botEntity
+    raycastQuery.origin.copy(_botPosition).setY(_botPosition.y + 1)
+    raycastQuery.direction.copy(_direction)
+
+    const world = Physics.getWorld(botEntity)
+    if (!world) continue
+
+    const hits = Physics.castRay(world, raycastQuery)
+
+    // If we hit something, adjust direction to avoid it
+    if (hits.length > 0) {
+      continue
+    }
+
+    // Apply final velocity
     _direction.multiplyScalar(BOT_SPEED)
-
-    // Set y velocity to 0 to keep bots grounded
-    _direction.y = 0
-
-    // Apply velocity
+    _direction.y = 0 // Keep grounded
     rigidbody.linearVelocity.copy(_direction)
-    rigidbody.targetKinematicPosition.copy(rigidbody.position).add(_direction.multiplyScalar(0.01))
+    rigidbody.targetKinematicPosition.copy(_botPosition.add(_direction.multiplyScalar(0.01)))
+
     // Set rotation to face movement direction
-    _quaternion.setFromRotationMatrix(_matrix.lookAt(_botPosition, _targetPosition, _up)).multiply(_flip)
+    _quaternion.setFromRotationMatrix(_matrix.lookAt(new Vector3(), _direction, _up)).multiply(_flip)
+
     rigidbody.targetKinematicRotation.copy(_quaternion)
   }
 
@@ -142,6 +170,7 @@ const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID }) => 
   const { entityUUID, owner } = props
   useEffect(() => {
     const entity = UUIDComponent.getEntityByUUID(entityUUID)
+    if (hasComponent(entity, BotComponent)) return
     setComponent(entity, GLTFComponent, { src: cdn + '/projects/theinfinitereality/naaanofighters/assets/xbot.vrm' })
     setComponent(entity, VisibleComponent)
     setComponent(entity, EnvMapComponent, { type: 'Skybox' })
@@ -155,7 +184,12 @@ const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID }) => 
       allowRolling: false,
       enabledRotations: [false, true, false]
     })
-    console.log(entity, 'set gltf here')
+    setComponent(entity, ColliderComponent, {
+      shape: 'capsule',
+      height: 1.5,
+      radius: 0.25,
+      centerOffset: new Vector3(0, 0.75, 0)
+    })
   }, [entityUUID])
   return null
 }
