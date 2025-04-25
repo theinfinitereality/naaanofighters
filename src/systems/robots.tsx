@@ -11,13 +11,20 @@ import { SpawnObjectActions } from '@ir-engine/spatial/src/transform/SpawnObject
 import { RobotActions } from '../actions/RobotActions'
 import { useEffect } from 'react'
 import { GLTFComponent } from '@ir-engine/engine/src/gltf/GLTFComponent'
+import config from '@ir-engine/common/src/config'
+import { VisibleComponent } from '@ir-engine/spatial/src/renderer/components/VisibleComponent'
+import { EnvMapComponent } from '@ir-engine/engine/src/scene/components/EnvmapComponent'
+import { SceneState } from '@ir-engine/engine/src/gltf/GLTFState'
 
 const SPAWN_RADIUS = 5
 const SPAWN_COUNT = 10
 let spawnAmount = 0
 
 const execute = () => {
-  const originEntity = getState(ReferenceSpaceState).originEntity
+  const sceneState = getState(SceneState)
+  const lastSceneURL = Object.keys(sceneState)[Object.keys(sceneState).length - 1]
+  const originEntity = sceneState[lastSceneURL]
+  if(!originEntity) return
   const parentUUID = getComponent(originEntity, UUIDComponent)
 
   if (spawnAmount >= SPAWN_COUNT) return
@@ -32,7 +39,7 @@ const execute = () => {
   )
 
   const entityUUID = ('random-entity-' + spawnAmount) as EntityUUID
-
+  console.log('spawning bot')
   dispatchAction(
     RobotActions.spawnRobot({
       position,
@@ -46,6 +53,8 @@ const execute = () => {
 
   spawnAmount++
 }
+
+const cdn = config.client.fileServer
 
 const RobotState = defineState({
   name: 'RobotState',
@@ -61,9 +70,9 @@ const RobotState = defineState({
     const state = useMutableState(RobotState)
     useEffect(() => {
       const entity = state.value[state.value.length-1]
-      console.log(entity)
-      setComponent(entity, GLTFComponent)
-
+      setComponent(entity, GLTFComponent, {src: cdn + '/projects/theinfinitereality/naaanofighters/assets/xbot.vrm'})
+      setComponent(entity, VisibleComponent)
+      setComponent(entity, EnvMapComponent, {type: 'Skybox'})
     }, [state])
   }
 })
