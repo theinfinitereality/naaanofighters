@@ -2,6 +2,8 @@ import {
   defineQuery,
   defineSystem,
   ECSState,
+  Engine,
+  EngineState,
   EntityUUID,
   getComponent,
   InputSystemGroup,
@@ -75,7 +77,8 @@ const executeInputSystem = () => {
       rotation: _rotation.multiply(Q_Y_180),
       parentUUID,
       entityUUID,
-      $topic: NetworkTopics.world
+      $topic: NetworkTopics.world,
+      $peer: Engine.instance.store.peerID
     })
   )
   cooldown = 0
@@ -85,7 +88,8 @@ const executeInputSystem = () => {
 const executeMovementSystem = () => {
   // Update projectile movement
   for (const projectileEntity of projectileQuery()) {
-    //if (getState(EngineState).userID + '_avatar' !== getComponent(projectileEntity, ProjectileComponent).ownerEntity) continue
+    if (getState(EngineState).userID + '_avatar' !== getComponent(projectileEntity, ProjectileComponent).ownerEntity)
+      continue
     const rigidbody = getComponent(projectileEntity, RigidBodyComponent)
 
     // Get current position and rotation

@@ -1,5 +1,6 @@
-import { defineAction } from '@ir-engine/hyperflux'
-import { WorldNetworkAction } from '@ir-engine/network'
+import { matchesEntityUUID } from '@ir-engine/ecs'
+import { defineAction, matches } from '@ir-engine/hyperflux'
+import { NetworkTopics, WorldNetworkAction } from '@ir-engine/network'
 import { matchesVector3 } from '@ir-engine/spatial/src/common/functions/MatchesUtils'
 
 export class RobotActions {
@@ -17,4 +18,11 @@ export class RobotActions {
       $cache: true
     })
   )
+
+  static damageRobot = defineAction({
+    type: 'bots.DAMAGE_ROBOT',
+    entityUUID: matchesEntityUUID,
+    damage: matches.number,
+    $topic: NetworkTopics.world
+  })
 }

@@ -45,7 +45,7 @@ export const ProjectileNetworkReactor = (props: {
 
     setComponent(entity, RigidBodyComponent, {
       type: BodyTypes.Kinematic,
-      allowRolling: false
+      ccd: true
     })
 
     setComponent(entity, ColliderComponent, {

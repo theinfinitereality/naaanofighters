@@ -1,11 +1,14 @@
 import config from '@ir-engine/common/src/config'
 import {
+  createEntity,
   defineQuery,
   defineSystem,
   Engine,
   EngineState,
+  EntityTreeComponent,
   EntityUUID,
   getComponent,
+  getMutableComponent,
   hasComponent,
   setComponent,
   SimulationSystemGroup,
@@ -24,13 +27,14 @@ import {
   dispatchAction,
   getMutableState,
   getState,
+  NO_PROXY,
   none,
   useMutableState,
   UserID
 } from '@ir-engine/hyperflux'
 import { NetworkTopics } from '@ir-engine/network'
 import { TransformComponent } from '@ir-engine/spatial'
-import { Physics, RaycastArgs } from '@ir-engine/spatial/src/physics/classes/Physics'
+import { RaycastArgs } from '@ir-engine/spatial/src/physics/classes/Physics'
 import { ColliderComponent } from '@ir-engine/spatial/src/physics/components/ColliderComponent'
 import { RigidBodyComponent } from '@ir-engine/spatial/src/physics/components/RigidBodyComponent'
 import { CollisionGroups } from '@ir-engine/spatial/src/physics/enums/CollisionGroups'
@@ -76,10 +80,8 @@ const execute = () => {
   if (!originEntity) return
   const parentUUID = getComponent(originEntity, UUIDComponent)
 
-  ///////// do the movement of the bots
   const selfAvatarEntity = AvatarComponent.getSelfAvatarEntity()
   if (!selfAvatarEntity) return
-  // get avatar position
   TransformComponent.getWorldPosition(selfAvatarEntity, _targetPosition)
 
   // Update each bot's velocity to move towards avatar
@@ -97,19 +99,22 @@ const execute = () => {
 
     // Check for obstacles using raycast
     // avoid self collider
-    raycastQuery.excludeCollider = bot
-    raycastQuery.origin.copy(_botPosition).setY(_botPosition.y + 1)
-    raycastQuery.direction.copy(_direction)
 
-    const world = Physics.getWorld(bot)
-    if (!world) continue
+    /**@todo WHY DOES THIS BREAK????? WHY DOES EXCLUDE COLLIDER STOP WORKING ON RESPAWNED BOTS??? */
+    // const colliderEntity = UUIDComponent.getEntityByUUID(getComponent(bot, UUIDComponent) + '_collider' as EntityUUID)
+    // raycastQuery.excludeCollider = colliderEntity
+    // raycastQuery.origin.copy(_botPosition).setY(_botPosition.y + 1)
+    // raycastQuery.direction.copy(_direction)
 
-    const hits = Physics.castRay(world, raycastQuery)
+    // const world = Physics.getWorld(bot)
+    // if (!world) continue
 
-    // If we hit something, adjust direction to avoid it
-    if (hits.length > 0) {
-      continue
-    }
+    // const hits = Physics.castRay(world, raycastQuery)
+
+    // // If we hit something, adjust direction to avoid it
+    // if (hits.length > 0) {
+    //   continue
+    // }
 
     // Set velocity, kinematic position to move towards self avatar
     _direction.multiplyScalar(BOT_SPEED)
@@ -121,23 +126,9 @@ const execute = () => {
     _quaternion.setFromRotationMatrix(_matrix.lookAt(new Vector3(), _direction, _up)).multiply(_flip)
 
     rigidbody.targetKinematicRotation.copy(_quaternion)
-
-    ///////// do health
-    if (botComponent.health <= 0) {
-      // Get the robot's position for the explosion effect
-      const position = new Vector3()
-      TransformComponent.getWorldPosition(bot, position)
-
-      // Dispatch the destroyRobot action
-      dispatchAction(
-        RobotActions.destroyRobot({
-          entityUUID: getComponent(bot, UUIDComponent)
-        })
-      )
-    }
   }
 
-  if (spawnAmount >= SPAWN_COUNT) return
+  if (botQuery().length >= SPAWN_COUNT) return
 
   ///////// do the spawning
 
@@ -146,7 +137,7 @@ const execute = () => {
 
   const position = new Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius)
 
-  const entityUUID = ('random-entity-' + spawnAmount + UUIDComponent.generateUUID()) as EntityUUID
+  const entityUUID = ('random-entity-' + UUIDComponent.generateUUID()) as EntityUUID
 
   dispatchAction(
     RobotActions.spawnRobot({
@@ -158,45 +149,58 @@ const execute = () => {
       $peer: Engine.instance.store.peerID
     })
   )
-
-  spawnAmount++
 }
 
 const cdn = config.client.fileServer
 
 const RobotState = defineState({
   name: 'RobotState',
-  initial: [] as { owner: UserID; entityUUID: EntityUUID; position: Vector3 }[],
+  initial: {} as Record<
+    EntityUUID,
+    {
+      owner: UserID
+      position: Vector3
+      health: number
+    }
+  >,
 
   receptors: {
     onSpawnRobot: RobotActions.spawnRobot.receive((action) => {
-      getMutableState(RobotState).merge([
-        { owner: action.ownerID, entityUUID: action.entityUUID, position: action.position }
-      ])
+      getMutableState(RobotState)[action.entityUUID].set({
+        owner: action.ownerID,
+        position: action.position,
+        health: 100
+      })
     }),
 
     onDestroyRobot: RobotActions.destroyRobot.receive((action) => {
-      // Remove the robot from the state
+      getMutableState(RobotState)[action.entityUUID].set(none)
+    }),
+
+    onDamageRobot: RobotActions.damageRobot.receive((action) => {
       const state = getMutableState(RobotState)
-      const index = state.value.findIndex((bot) => bot.entityUUID === action.entityUUID)
-      if (index >= 0) {
-        state[index].set(none)
-      }
+      if (!state[action.entityUUID].value) return
+      state[action.entityUUID].health.set(state[action.entityUUID].health.get(NO_PROXY) - action.damage)
     })
   },
 
   reactor: () => {
     const state = useMutableState(RobotState)
     useEffect(() => {
-      if (state.value.length === 1) {
+      if (Object.keys(state.value).length === 1) {
         openWelcomeModal()
       }
     }, [])
 
     return (
       <>
-        {state.value.map((bot) => (
-          <BotNetworkReactor entityUUID={bot.entityUUID} owner={bot.owner} position={bot.position} />
+        {state.keys.map((entityUUID: EntityUUID) => (
+          <BotNetworkReactor
+            key={entityUUID}
+            entityUUID={entityUUID}
+            owner={state[entityUUID].owner.value}
+            position={state[entityUUID].position.value}
+          />
         ))}
       </>
     )
@@ -205,15 +209,22 @@ const RobotState = defineState({
 
 const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID; position: Vector3 }) => {
   const { entityUUID, owner, position } = props
+  const robotState = useMutableState(RobotState)
+
+  // Initial setup of the bot entity
   useEffect(() => {
-    const entity = UUIDComponent.getOrCreateEntityByUUID(entityUUID)
+    const entity = UUIDComponent.getEntityByUUID(entityUUID)
     if (hasComponent(entity, BotComponent)) return
     setComponent(entity, TransformComponent, { position })
     setComponent(entity, GLTFComponent, { src: cdn + '/projects/theinfinitereality/naaanofighters/assets/xbot.vrm' })
     setComponent(entity, VisibleComponent)
     setComponent(entity, EnvMapComponent, { type: 'Skybox' })
 
-    setComponent(entity, BotComponent, { target: (owner + '_avatar') as EntityUUID })
+    setComponent(entity, BotComponent, {
+      target: (owner + '_avatar') as EntityUUID,
+      health: 100
+    })
+
     setComponent(entity, AvatarComponent)
     setComponent(entity, AvatarAnimationComponent)
     setComponent(entity, AvatarRigComponent)
@@ -222,13 +233,47 @@ const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID; posit
       allowRolling: false,
       enabledRotations: [false, true, false]
     })
-    setComponent(entity, ColliderComponent, {
+
+    //create child entity collider
+    const colliderEntity = createEntity()
+
+    setComponent(colliderEntity, ColliderComponent, {
       shape: 'capsule',
-      height: 1.5,
-      radius: 0.25,
-      centerOffset: new Vector3(0, 0.75, 0)
+      collisionLayer: CollisionGroups.Default,
+      collisionMask: CollisionGroups.Default,
+      restitution: 0.8
     })
+    setComponent(colliderEntity, EntityTreeComponent, { parentEntity: entity })
+    setComponent(colliderEntity, TransformComponent, {
+      scale: new Vector3(0.25, 1, 0.25),
+      position: new Vector3(0, 0.5, 0)
+    })
+    setComponent(colliderEntity, UUIDComponent, (entityUUID + '_collider') as EntityUUID)
   }, [entityUUID])
+
+  // Sync health from state to BotComponent
+  useEffect(() => {
+    const entity = UUIDComponent.getEntityByUUID(entityUUID)
+    if (!entity || !hasComponent(entity, BotComponent)) return
+
+    const botState = robotState[entityUUID]
+    if (!botState?.value) return
+
+    const health = botState.health.value
+    if (typeof health === 'number') {
+      const botComponent = getMutableComponent(entity, BotComponent)
+      botComponent.health.set(health)
+    }
+
+    if (getComponent(entity, BotComponent).health <= 0) {
+      dispatchAction(
+        RobotActions.destroyRobot({
+          entityUUID
+        })
+      )
+    }
+  }, [entityUUID, robotState[entityUUID]?.health])
+
   return null
 }
 

@@ -2,15 +2,15 @@ import {
   defineQuery,
   defineSystem,
   getComponent,
-  getMutableComponent,
   hasComponent,
   SimulationSystemGroup,
   UUIDComponent
 } from '@ir-engine/ecs'
-import { dispatchAction, NO_PROXY } from '@ir-engine/hyperflux'
+import { dispatchAction } from '@ir-engine/hyperflux'
 import { CollisionComponent } from '@ir-engine/spatial/src/physics/components/CollisionComponent'
 import { CollisionEvents } from '@ir-engine/spatial/src/physics/types/PhysicsTypes'
 import { ProjectileActions } from '../actions/ProjectileActions'
+import { RobotActions } from '../actions/RobotActions'
 import { BotComponent } from '../components/BotComponents'
 import { ProjectileComponent } from '../components/ProjectileComponent'
 
@@ -29,9 +29,12 @@ const execute = () => {
 
       // Check if the collided entity is a bot
       if (hasComponent(collidedEntity, BotComponent)) {
-        // Get the bot component and reduce health
-        const botComponent = getMutableComponent(collidedEntity, BotComponent)
-        botComponent.health.set(botComponent.health.get(NO_PROXY) - 100)
+        dispatchAction(
+          RobotActions.damageRobot({
+            entityUUID: getComponent(collidedEntity, UUIDComponent),
+            damage: 100
+          })
+        )
 
         // Destroy the projectile
         dispatchAction(
