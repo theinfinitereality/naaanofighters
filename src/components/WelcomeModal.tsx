@@ -10,29 +10,25 @@ export const openWelcomeModal = () => {
   // So we need to use the ModalState directly
   ModalState.openModal(
     <Modal
-      title="Welcome to NaanoRobots!"
+      title="INFINITE BOT SHOOTER"
       onClose={() => ModalState.closeModal()}
       onSubmit={() => ModalState.closeModal()}
       submitButtonText="Start Game"
       className="max-w-md animate-slideIn"
     >
       <div className="flex flex-col gap-4">
-        <p className="text-lg">
-          Welcome to the exciting world of NaanoRobots! Your mission is to control and command these tiny robots to
-          complete various tasks.
-        </p>
+        <p className="text-lg">BOTS are coming for you!</p>
 
         <div className="rounded-lg bg-surface-2 p-4">
           <h3 className="mb-2 font-bold">Game Objectives:</h3>
           <ul className="list-inside list-disc space-y-1">
-            <li>Collect resources scattered around the environment</li>
-            <li>Build structures and expand your robot army</li>
-            <li>Defend against hostile entities</li>
-            <li>Explore the mysterious world around you</li>
+            <li>Click to shoot and destroy them</li>
+            <li>Don't let them touch you!</li>
+            <li>They respawn forever and ever...</li>
           </ul>
         </div>
 
-        <p>Use your skills to navigate through challenges and become the master of NaanoRobots!</p>
+        <p>How long can you survive before it crashes?!</p>
       </div>
     </Modal>
   )
