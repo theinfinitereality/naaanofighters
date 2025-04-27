@@ -11,32 +11,28 @@ import { CollisionGroups } from '@ir-engine/spatial/src/physics/enums/CollisionG
 import { BodyTypes } from '@ir-engine/spatial/src/physics/types/PhysicsTypes'
 import { VisibleComponent } from '@ir-engine/spatial/src/renderer/components/VisibleComponent'
 import { useEffect } from 'react'
-import { Vector3 } from 'three'
+import { Quaternion, Vector3 } from 'three'
 import { ProjectileComponent } from './ProjectileComponent'
 
 const cdn = config.client.fileServer
 
-export const ProjectileNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID }) => {
-  const { entityUUID, owner } = props
+export const ProjectileNetworkReactor = (props: {
+  entityUUID: EntityUUID
+  owner: UserID
+  position: Vector3
+  rotation: Quaternion
+}) => {
+  const { entityUUID, owner, position, rotation } = props
 
   useEffect(() => {
-    const entity = UUIDComponent.getEntityByUUID(entityUUID)
+    const entity = UUIDComponent.getOrCreateEntityByUUID(entityUUID)
 
     setComponent(entity, VisibleComponent)
     setComponent(entity, EnvMapComponent, { type: 'Skybox' })
 
-    setComponent(entity, RigidBodyComponent, {
-      type: BodyTypes.Kinematic
-    })
-
-    setComponent(entity, ColliderComponent, {
-      shape: 'sphere',
-      collisionLayer: CollisionGroups.Default,
-      collisionMask: CollisionGroups.Default | CollisionGroups.Ground,
-      restitution: 0.8
-    })
-
     setComponent(entity, TransformComponent, {
+      position: position,
+      rotation: rotation,
       scale: new Vector3(0.2, 0.2, 0.2)
     })
 
@@ -44,7 +40,19 @@ export const ProjectileNetworkReactor = (props: { entityUUID: EntityUUID; owner:
 
     setComponent(entity, ProjectileComponent, {
       lifetime: 5000,
-      ownerEntity: owner as any
+      ownerEntity: (owner + '_avatar') as EntityUUID
+    })
+
+    setComponent(entity, RigidBodyComponent, {
+      type: BodyTypes.Kinematic,
+      allowRolling: false
+    })
+
+    setComponent(entity, ColliderComponent, {
+      shape: 'sphere',
+      collisionLayer: CollisionGroups.Default,
+      collisionMask: CollisionGroups.Default,
+      restitution: 0.8
     })
   }, [entityUUID])
 

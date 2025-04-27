@@ -1,10 +1,19 @@
 import { defineAction } from '@ir-engine/hyperflux'
-import { SpawnObjectActions } from '@ir-engine/spatial/src/transform/SpawnObjectActions'
+import { WorldNetworkAction } from '@ir-engine/network'
+import { matchesQuaternion, matchesVector3 } from '@ir-engine/spatial/src/common/functions/MatchesUtils'
 
 export class ProjectileActions {
   static spawnProjectile = defineAction(
-    SpawnObjectActions.spawnObject.extend({
-      type: 'ee.naaanofighters.SPAWN_PROJECTILE'
+    WorldNetworkAction.spawnEntity.extend({
+      type: 'player.SPAWN_PROJECTILE',
+      position: matchesVector3,
+      rotation: matchesQuaternion
+    })
+  )
+
+  static destroyProjectile = defineAction(
+    WorldNetworkAction.destroyEntity.extend({
+      type: 'player.DESTROY_PROJECTILE'
     })
   )
 }

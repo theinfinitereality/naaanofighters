@@ -2,10 +2,9 @@ import {
   defineQuery,
   defineSystem,
   ECSState,
-  Engine,
-  EngineState,
   EntityUUID,
   getComponent,
+  InputSystemGroup,
   SimulationSystemGroup,
   UUIDComponent
 } from '@ir-engine/ecs'
@@ -24,8 +23,8 @@ import { ProjectileComponent } from '../components/ProjectileComponent'
 import { ProjectileNetworkReactor } from '../components/ProjectileNetworkReactor'
 
 const PROJECTILE_SPAWN_OFFSET = new Vector3(0, 1.5, 0) // Spawn in front of avatar at head height
-
 const PROJECTILE_SPEED = 20 // Adjust speed as needed
+
 // Forward direction vector
 const _forward = new Vector3(0, 0, -1)
 const _rotation = new Quaternion()
@@ -34,10 +33,11 @@ const _position = new Vector3()
 const _velocity = new Vector3()
 const projectileQuery = defineQuery([ProjectileComponent])
 
+// Shared cooldown state
 let cooldown = 0
 
-// Weep at my imperativity WEEP!! :)
-const execute = () => {
+// Input system execute function - handles input detection and projectile spawning
+const executeInputSystem = () => {
   // Get the self avatar entity
   const selfAvatarEntity = AvatarComponent.getSelfAvatarEntity()
   if (!selfAvatarEntity) return
@@ -46,26 +46,11 @@ const execute = () => {
   const viewerEntity = getState(ReferenceSpaceState).viewerEntity
   const buttons = InputComponent.getButtons(viewerEntity)
 
-  // Update projectile movement
-  for (const projectileEntity of projectileQuery()) {
-    const rigidbody = getComponent(projectileEntity, RigidBodyComponent)
-    if (!rigidbody) continue
-
-    // Get current position and rotation
-    TransformComponent.getWorldPosition(projectileEntity, _position)
-    TransformComponent.getWorldRotation(projectileEntity, _rotation)
-
-    // Calculate velocity based on forward direction and rotation
-    _velocity.copy(_forward).applyQuaternion(_rotation).multiplyScalar(PROJECTILE_SPEED)
-
-    // Apply velocity and update target position
-    rigidbody.linearVelocity.copy(_velocity)
-    rigidbody.targetKinematicPosition.copy(_position).add(_velocity.multiplyScalar(0.015))
-  }
+  // Update cooldown
   cooldown += getState(ECSState).deltaSeconds
-  if (cooldown < 1) return
+  if (cooldown < 0.25) return
 
-  // Check if spacebar is pressed
+  // Check if primary click is pressed
   if (!buttons.PrimaryClick?.pressed) return
 
   // Get the scene entity to use as parent
@@ -90,18 +75,36 @@ const execute = () => {
       rotation: _rotation.multiply(Q_Y_180),
       parentUUID,
       entityUUID,
-      ownerID: getState(EngineState).userID,
-      $topic: NetworkTopics.world,
-      $peer: Engine.instance.store.peerID
+      $topic: NetworkTopics.world
     })
   )
   cooldown = 0
 }
 
+// Movement system execute function - handles projectile movement
+const executeMovementSystem = () => {
+  // Update projectile movement
+  for (const projectileEntity of projectileQuery()) {
+    //if (getState(EngineState).userID + '_avatar' !== getComponent(projectileEntity, ProjectileComponent).ownerEntity) continue
+    const rigidbody = getComponent(projectileEntity, RigidBodyComponent)
+
+    // Get current position and rotation
+    TransformComponent.getWorldPosition(projectileEntity, _position)
+    TransformComponent.getWorldRotation(projectileEntity, _rotation)
+
+    // Calculate velocity based on forward direction and rotation
+    _velocity.copy(_forward).applyQuaternion(_rotation).multiplyScalar(PROJECTILE_SPEED)
+
+    // Apply velocity and update target position
+    rigidbody.linearVelocity.copy(_velocity)
+    rigidbody.targetKinematicPosition.copy(_position).add(_velocity.multiplyScalar(0.015))
+  }
+}
+
 // Define the ProjectileState to track active projectiles
 export const ProjectileState = defineState({
   name: 'ProjectileState',
-  initial: [] as { owner: UserID; entityUUID: EntityUUID }[],
+  initial: [] as { owner: UserID; entityUUID: EntityUUID; position: Vector3; rotation: Quaternion }[],
 
   receptors: {
     onSpawnProjectile: ProjectileActions.spawnProjectile.receive((action) => {
@@ -109,7 +112,9 @@ export const ProjectileState = defineState({
       getMutableState(ProjectileState).merge([
         {
           owner: action.ownerID,
-          entityUUID: action.entityUUID
+          entityUUID: action.entityUUID,
+          position: action.position,
+          rotation: action.rotation
         }
       ])
     })
@@ -125,6 +130,8 @@ export const ProjectileState = defineState({
             key={projectile.entityUUID}
             entityUUID={projectile.entityUUID}
             owner={projectile.owner}
+            position={projectile.position}
+            rotation={projectile.rotation}
           />
         ))}
       </>
@@ -132,9 +139,16 @@ export const ProjectileState = defineState({
   }
 })
 
-// Export the system
-export const AvatarProjectileSystem = defineSystem({
-  uuid: 'AvatarProjectileSystem',
+// Export the input system
+export const AvatarProjectileInputSystem = defineSystem({
+  uuid: 'AvatarProjectileInputSystem',
+  insert: { with: InputSystemGroup },
+  execute: executeInputSystem
+})
+
+// Export the movement system
+export const AvatarProjectileMovementSystem = defineSystem({
+  uuid: 'AvatarProjectileMovementSystem',
   insert: { after: SimulationSystemGroup },
-  execute
+  execute: executeMovementSystem
 })
