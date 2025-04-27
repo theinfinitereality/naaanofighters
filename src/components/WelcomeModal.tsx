@@ -13,7 +13,7 @@ export const openWelcomeModal = () => {
       title="INFINITE BOT SHOOTER"
       onClose={() => ModalState.closeModal()}
       onSubmit={() => ModalState.closeModal()}
-      submitButtonText="Start Game"
+      submitButtonText="Let's go"
       className="max-w-md animate-slideIn"
     >
       <div className="flex flex-col gap-4">
