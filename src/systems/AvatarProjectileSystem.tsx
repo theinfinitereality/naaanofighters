@@ -53,7 +53,7 @@ const executeInputSystem = () => {
   if (cooldown < 0.25) return
 
   // Check if primary click is pressed
-  if (!buttons.PrimaryClick?.pressed) return
+  if (!buttons.SecondaryClick?.pressed) return
 
   // Get the scene entity to use as parent
   const sceneState = getState(SceneState)
