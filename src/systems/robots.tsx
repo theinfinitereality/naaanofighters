@@ -5,13 +5,16 @@ import {
   defineSystem,
   Engine,
   EngineState,
+  entityExists,
   EntityTreeComponent,
   EntityUUID,
   getComponent,
   getMutableComponent,
   hasComponent,
+  removeEntity,
   setComponent,
   SimulationSystemGroup,
+  useQuery,
   UUIDComponent
 } from '@ir-engine/ecs'
 import {
@@ -74,12 +77,6 @@ const raycastQuery = {
 const botQuery = defineQuery([BotComponent, RigidBodyComponent, TransformComponent, UUIDComponent])
 
 const execute = () => {
-  const sceneState = getState(SceneState)
-  const lastSceneURL = Object.keys(sceneState)[Object.keys(sceneState).length - 1]
-  const originEntity = sceneState[lastSceneURL]
-  if (!originEntity) return
-  const parentUUID = getComponent(originEntity, UUIDComponent)
-
   const selfAvatarEntity = AvatarComponent.getSelfAvatarEntity()
   if (!selfAvatarEntity) return
   TransformComponent.getWorldPosition(selfAvatarEntity, _targetPosition)
@@ -127,10 +124,15 @@ const execute = () => {
 
     rigidbody.targetKinematicRotation.copy(_quaternion)
   }
+}
 
-  if (botQuery().length >= SPAWN_COUNT) return
-
-  ///////// do the spawning
+const spawnRobot = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 3000))
+  const sceneState = getState(SceneState)
+  const lastSceneURL = Object.keys(sceneState)[Object.keys(sceneState).length - 1]
+  const originEntity = sceneState[lastSceneURL]
+  if (!originEntity) return
+  const parentUUID = getComponent(originEntity, UUIDComponent)
 
   const angle = Math.random() * Math.PI * 2
   const radius = Math.random() * SPAWN_RADIUS
@@ -236,19 +238,22 @@ const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID; posit
 
     //create child entity collider
     const colliderEntity = createEntity()
-
-    setComponent(colliderEntity, ColliderComponent, {
-      shape: 'capsule',
-      collisionLayer: CollisionGroups.Default,
-      collisionMask: CollisionGroups.Default,
-      restitution: 0.8
-    })
     setComponent(colliderEntity, EntityTreeComponent, { parentEntity: entity })
     setComponent(colliderEntity, TransformComponent, {
       scale: new Vector3(0.25, 1, 0.25),
       position: new Vector3(0, 0.5, 0)
     })
     setComponent(colliderEntity, UUIDComponent, (entityUUID + '_collider') as EntityUUID)
+    setComponent(colliderEntity, ColliderComponent, {
+      shape: 'capsule',
+      collisionLayer: CollisionGroups.Default,
+      collisionMask: CollisionGroups.Default,
+      restitution: 0.8
+    })
+    return () => {
+      //this if check shouldnt be necessary and yet it is because there's some issue with physics entity cleanup
+      if (!entityExists(getComponent(colliderEntity, EntityTreeComponent)?.parentEntity)) removeEntity(colliderEntity)
+    }
   }, [entityUUID])
 
   // Sync health from state to BotComponent
@@ -280,5 +285,20 @@ const BotNetworkReactor = (props: { entityUUID: EntityUUID; owner: UserID; posit
 export const RobotSystem = defineSystem({
   uuid: 'bots.RobotSpawnSystem',
   insert: { after: SimulationSystemGroup },
-  execute
+  execute,
+  reactor: () => {
+    useEffect(() => {
+      spawnRobot()
+    }, [])
+
+    const query = useQuery([BotComponent])
+
+    useEffect(() => {
+      if (query.length < SPAWN_COUNT) {
+        spawnRobot()
+      }
+    }, [query])
+
+    return null
+  }
 })
